@@ -6,7 +6,7 @@ Prototipo de mapa de tráfico aéreo en vivo para Rionegro (MDE), Olaya Herrera 
 - Mapa con MapLibre GL y teselas gratuitas de OpenFreeMap.
 - Aviones en vivo cada 5 s desde **adsb.lol** (red ADS-B comunitaria, gratis), en un radio de ~110 km.
 - Lista ordenada por distancia y ficha con callsign, tipo, matrícula, altitud, velocidad, velocidad vertical y squawk.
-- Enlaces a las páginas de ATColombia de cada aeropuerto para el audio (demo gratis de El Dorado Autorizaciones).
+- **Audio dentro de la página**: lista de frecuencias reales por aeropuerto con reproductor y volumen. Viene cargada la demo gratuita de El Dorado Autorizaciones 121.6; las demás quedan "sin fuente" y se les asigna la URL de tu propio receptor (Icecast/MP3/AAC) con «Asignar URL» (se guarda en el navegador). Para dejarla fija para todos, edita `src` en `AIRPORTS` dentro de `index.html`.
 
 ## Estructura
 - `index.html` — la página.

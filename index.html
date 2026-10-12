@@ -42,6 +42,32 @@ aside{background:var(--panel);border-left:1px solid var(--line);display:flex;fle
 .listen a span{font-family:var(--mono);color:var(--accent)}
 .listen a:hover{border-color:var(--accent)}
 .note{font-size:12px;color:var(--muted);margin:8px 0 0}
+.player{display:flex;align-items:center;gap:12px;margin-top:12px;padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
+.player .now{flex:1;min-width:0}
+.player .now b{display:block;font:600 14px var(--display);letter-spacing:.03em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.player .now span{font:12px var(--mono);color:var(--muted)}
+.player .now span.on{color:var(--ok)}
+.player .now span.err{color:var(--warn)}
+.bars{display:flex;gap:3px;align-items:flex-end;height:18px}
+.bars i{width:3px;height:4px;background:var(--ok);border-radius:1px}
+.playing .bars i{animation:eq 1s infinite ease-in-out}
+.bars i:nth-child(2){animation-delay:.2s}.bars i:nth-child(3){animation-delay:.4s}.bars i:nth-child(4){animation-delay:.1s}
+@keyframes eq{50%{height:18px}}
+@media (prefers-reduced-motion:reduce){.playing .bars i{animation:none;height:12px}}
+#vol{width:80px;accent-color:var(--accent)}
+.freqs{display:flex;flex-direction:column;gap:6px;margin-top:10px}
+.freq{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:4px 10px;padding:8px 10px;border:1px solid var(--line);border-radius:6px}
+.freq.active{border-color:var(--accent)}
+.freq .pb{all:unset;cursor:pointer;width:32px;height:32px;border-radius:50%;display:grid;place-items:center;background:var(--accent);color:#111;font-size:13px}
+.freq .pb:disabled{background:var(--line);color:var(--muted);cursor:not-allowed}
+.freq .pb:focus-visible,.freq .set:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.freq .nm{min-width:0;font-size:13px}
+.freq .nm small{display:block;font:12px var(--mono);color:var(--muted)}
+.freq .set{all:unset;cursor:pointer;font:12px var(--mono);color:var(--muted);text-decoration:underline}
+.freq form{grid-column:1/-1;display:flex;gap:6px}
+.freq input{flex:1;min-width:0;font:12px var(--mono);color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:7px 8px}
+.freq form button{font:600 12px var(--display);border:0;border-radius:4px;padding:0 10px;background:var(--accent);color:#111;cursor:pointer}
+aside{overflow:auto}
 #detail[hidden]{display:none}
 .kv{display:grid;grid-template-columns:repeat(3,1fr);gap:10px 8px;margin-top:10px}
 .kv div{min-width:0}
@@ -85,8 +111,14 @@ li .d{font:12px var(--mono);color:var(--muted);text-align:right}
   <section class="sec">
     <p class="eyebrow">Aeropuerto</p>
     <h2 class="apt" id="aptName">José María Córdova<small>SKRG · MDE · Rionegro</small></h2>
-    <div class="listen" id="listen"></div>
-    <p class="note">El audio en vivo lo ofrece ATColombia en su web y app. Este radar usa datos ADS-B comunitarios de adsb.lol.</p>
+    <div class="player" id="player">
+      <div class="bars" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+      <div class="now"><b id="nowName">Elige una frecuencia</b><span id="nowState">Detenido</span></div>
+      <label for="vol" class="sr" style="position:absolute;left:-9999px">Volumen</label>
+      <input type="range" id="vol" min="0" max="1" step="0.05" value="0.9">
+    </div>
+    <div class="freqs" id="freqs"></div>
+    <p class="note">Frecuencias sin fuente: toca «Asignar URL» y pega el stream de tu receptor (Icecast, MP3 o AAC). Se guarda solo en este navegador.</p>
   </section>
   <section class="sec" id="detail" hidden>
     <p class="eyebrow">Aeronave seleccionada</p>
@@ -106,15 +138,92 @@ li .d{font:12px var(--mono);color:var(--muted);text-align:right}
 
 <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
 <script>
+// src: URL del stream. null = sin fuente todavía (se asigna desde la página).
+// La única fuente precargada es la demo gratuita que ATColombia ofrece sin cuenta.
 const AIRPORTS = {
-  MDE:{name:"José María Córdova", icao:"SKRG", city:"Rionegro", lat:6.1645, lon:-75.4231, zoom:9.4,
-       listen:[["Ver frecuencias de Rionegro","atcolombia.co/aeropuertos/MDE","https://atcolombia.co/aeropuertos/MDE"]]},
-  EOH:{name:"Olaya Herrera", icao:"SKMD", city:"Medellín", lat:6.2205, lon:-75.5906, zoom:10,
-       listen:[["Ver frecuencias de Olaya Herrera","atcolombia.co/aeropuertos/EOH","https://atcolombia.co/aeropuertos/EOH"]]},
-  BOG:{name:"El Dorado", icao:"SKBO", city:"Bogotá", lat:4.7016, lon:-74.1469, zoom:9.4,
-       listen:[["Demo gratis: Autorizaciones 121.6","atcolombia.co/#demo","https://atcolombia.co/?landing=1#demo"],
-               ["Ver frecuencias de El Dorado","atcolombia.co/aeropuertos/BOG","https://atcolombia.co/aeropuertos/BOG"]]}
+  MDE:{name:"José María Córdova", icao:"SKRG", city:"Rionegro", lat:6.1645, lon:-75.4231, zoom:9.4, freqs:[
+    {name:"Torre", mhz:"118.60", src:null},
+    {name:"Superficie", mhz:"121.90", src:null},
+    {name:"Autorizaciones", mhz:"121.65", src:null},
+    {name:"Medellín Aproximación", mhz:"121.10", src:null}]},
+  EOH:{name:"Olaya Herrera", icao:"SKMD", city:"Medellín", lat:6.2205, lon:-75.5906, zoom:10, freqs:[
+    {name:"Torre", mhz:"118.00", src:null},
+    {name:"Superficie", mhz:"121.90", src:null},
+    {name:"Autorizaciones", mhz:"121.75", src:null},
+    {name:"Medellín Aproximación", mhz:"121.10", src:null}]},
+  BOG:{name:"El Dorado", icao:"SKBO", city:"Bogotá", lat:4.7016, lon:-74.1469, zoom:9.4, freqs:[
+    {name:"Autorizaciones (demo gratis ATColombia)", mhz:"121.60", src:"https://audio.atcolombia.co/SKBO_DEL"},
+    {name:"Torre Norte", mhz:"118.10", src:null},
+    {name:"Torre Sur", mhz:"118.25", src:null},
+    {name:"Superficie Sur", mhz:"122.75", src:null},
+    {name:"Bogotá Aproximación", mhz:"119.50", src:null}]}
 };
+
+// ---- Audio ----
+const audio = new Audio();
+audio.preload = "none";
+let playingKey = null, stallTimer = null;
+const keyOf = (apt, f) => `${apt}:${f.mhz}`;
+function storedSrc(key){ try { return localStorage.getItem("src:" + key); } catch { return null; } }
+function saveSrc(key, url){ try { url ? localStorage.setItem("src:" + key, url) : localStorage.removeItem("src:" + key); } catch {} }
+function srcFor(apt, f){ return storedSrc(keyOf(apt, f)) || f.src; }
+
+function setState(text, cls){
+  const s = $("nowState"); s.textContent = text; s.className = cls || "";
+  $("player").classList.toggle("playing", cls === "on");
+}
+function stopAudio(){
+  clearTimeout(stallTimer);
+  audio.pause(); audio.removeAttribute("src"); audio.load();
+  playingKey = null; setState("Detenido"); renderFreqs();
+}
+function playFreq(apt, f){
+  const key = keyOf(apt, f), src = srcFor(apt, f);
+  if (playingKey === key){ stopAudio(); return; }
+  if (!src) return;
+  stopAudio();
+  playingKey = key;
+  $("nowName").textContent = `${AIRPORTS[apt].icao} · ${f.name} ${f.mhz}`;
+  setState("Conectando…");
+  audio.src = src; audio.volume = Number($("vol").value);
+  stallTimer = setTimeout(() => { if (playingKey === key && audio.paused) setState("No responde. Revisa la URL o el receptor.", "err"); }, 15000);
+  audio.play().catch(() => setState("No se pudo reproducir esta fuente.", "err"));
+  renderFreqs();
+}
+audio.addEventListener("playing", () => { clearTimeout(stallTimer); setState("En vivo · puede haber silencios entre comunicaciones", "on"); });
+audio.addEventListener("waiting", () => { if (playingKey) setState("Cargando…"); });
+audio.addEventListener("error", () => { if (playingKey) setState("La fuente falló o está fuera de línea.", "err"); });
+document.getElementById("vol").addEventListener("input", e => { audio.volume = Number(e.target.value); });
+
+function renderFreqs(){
+  const a = AIRPORTS[current];
+  $("freqs").replaceChildren(...a.freqs.map(f => {
+    const key = keyOf(current, f), src = srcFor(current, f), on = playingKey === key;
+    const row = document.createElement("div"); row.className = "freq" + (on ? " active" : "");
+    const pb = document.createElement("button"); pb.type = "button"; pb.className = "pb";
+    pb.textContent = on ? "■" : "▶"; pb.disabled = !src;
+    pb.setAttribute("aria-label", (on ? "Detener " : "Escuchar ") + f.name);
+    pb.addEventListener("click", () => playFreq(current, f));
+    const nm = document.createElement("div"); nm.className = "nm"; nm.append(f.name);
+    const sm = document.createElement("small"); sm.textContent = f.mhz + " MHz" + (src ? "" : " · sin fuente"); nm.append(sm);
+    const set = document.createElement("button"); set.type = "button"; set.className = "set";
+    set.textContent = src && storedSrc(key) ? "Editar" : (src ? "" : "Asignar URL");
+    set.hidden = !set.textContent;
+    set.addEventListener("click", () => {
+      if (row.querySelector("form")) return;
+      const form = document.createElement("form");
+      const inp = document.createElement("input"); inp.type = "url"; inp.id = "src-" + key.replace(/\W/g, "");
+      inp.placeholder = "https://tu-servidor:8000/SKRG_TWR"; inp.value = storedSrc(key) || ""; inp.setAttribute("aria-label", "URL del stream");
+      const ok = document.createElement("button"); ok.type = "submit"; ok.textContent = "Guardar";
+      form.append(inp, ok); row.append(form); inp.focus();
+      form.addEventListener("submit", e => { e.preventDefault(); const v = inp.value.trim();
+        if (v && !/^https?:\/\//i.test(v)) { inp.setCustomValidity("Debe empezar por http:// o https://"); inp.reportValidity(); return; }
+        saveSrc(key, v); if (playingKey === key) stopAudio(); renderFreqs(); });
+    });
+    row.append(pb, nm, set);
+    return row;
+  }));
+}
 const RADIUS_NM = 60, REFRESH_MS = 5000;
 const PLANE_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#e6edf3" d="M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5z"/></svg>';
 
@@ -151,11 +260,7 @@ function renderAirport(){
   $("aptName").append(a.name);
   const s = document.createElement("small"); s.textContent = `${a.icao} · ${current} · ${a.city}`;
   $("aptName").append(s);
-  $("listen").replaceChildren(...a.listen.map(([label, short, href]) => {
-    const el = document.createElement("a"); el.href = href; el.target = "_blank"; el.rel = "noopener";
-    el.append(label); const sp = document.createElement("span"); sp.textContent = "↗"; sp.title = short; el.append(sp);
-    return el;
-  }));
+  renderFreqs();
   document.querySelectorAll("nav button").forEach(b => b.setAttribute("aria-pressed", b.dataset.apt === current));
 }
 
